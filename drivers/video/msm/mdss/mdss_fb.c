@@ -55,7 +55,6 @@
 #include "mdss_smmu.h"
 #include "mdss_mdp.h"
 #include "mdp3_ctrl.h"
-#include "mdss_dsi.h"
 
 #include "mdss_livedisplay.h"
 
@@ -278,34 +277,6 @@ static int mdss_fb_notify_update(struct msm_fb_data_type *mfd,
 
 static int lcd_backlight_registered;
 
-#define MAX_BL_LUTS 7
-static int backlight_luts[MAX_BL_LUTS] = {
-	5,   // x = 1 : original bl = 5
-	6,   // 2 : 21
-	8,   // 3 : 37
-	12,  // 4 : 53
-	17,  // 5 : 69
-	25,  // 6 : 85
-	38,  // 7 : 101
-};
-
-#define LINEAR_CONVERT(v_old, min_new, max_new, min_old, max_old) \
-				((((v_old - min_old) * (max_new - min_new)) / (max_old - min_old)) + min_new)
-
-#define MDSS_BRIGHT_TO_BL1(out, v, bl_min, bl_max, min_bright, max_bright) do {\
-				if (v <= min_bright) out = bl_min; \
-				else \
-				out = LINEAR_CONVERT(v, bl_min, bl_max, min_bright, max_bright); \
-				} while (0)
-
-#define MDSS_BRIGHT_TO_BL2(out, v, bl_min, bl_max, min_bright, max_bright) do {\
-				if (v <= min_bright) out = bl_min; \
-				else if (v <= MAX_BL_LUTS) out = backlight_luts[v - 1]; \
-				else \
-				out = LINEAR_CONVERT(v, backlight_luts[MAX_BL_LUTS - 1], bl_max, \
-					MAX_BL_LUTS, max_bright); \
-				} while (0)
-
 static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 				      enum led_brightness value)
 {
@@ -322,31 +293,11 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 
 	/* This maps android backlight level 0 to 255 into
 	   driver backlight level 0 to bl_max with rounding */
-#if 1
-	if (mfd->panel_info->bl_min < 5)
-		mfd->panel_info->bl_min = 5;
-
-	if (mfd->panel_info->bl_max == 4095) {
-		/* Provide a smoother transition on the lows */
-		MDSS_BRIGHT_TO_BL2(bl_lvl, value, mfd->panel_info->bl_min, mfd->panel_info->bl_max,
-				1, mfd->panel_info->brightness_max);
-	} else {
-		MDSS_BRIGHT_TO_BL1(bl_lvl, value, mfd->panel_info->bl_min, mfd->panel_info->bl_max,
-				1, mfd->panel_info->brightness_max);
-	}
-
-	if (bl_lvl && !value)
-		bl_lvl = 0;
-
-#else
 	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
 				mfd->panel_info->brightness_max);
-#endif
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
-
-	pr_debug("bl_lvl is %d, value is %d\n", bl_lvl, value);	
 
 	if (!IS_CALIB_MODE_BL(mfd) && (!mfd->ext_bl_ctrl || !value ||
 							!mfd->bl_level)) {
@@ -4896,8 +4847,6 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	struct mdp_buf_sync buf_sync;
 	unsigned int dsi_mode = 0;
 	struct mdss_panel_data *pdata = NULL;
-	unsigned int Color_mode = 0;
-	unsigned int CE_mode = 0;	
 
 	if (!info || !info->par)
 		return -EINVAL;
@@ -4974,23 +4923,6 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 
 	case MSMFB_ASYNC_POSITION_UPDATE:
 		ret = mdss_fb_async_position_update_ioctl(info, argp);
-		break;
-	case MSMFB_ENHANCE_SET_GAMMA:
-		ret = copy_from_user(&Color_mode, argp, sizeof(Color_mode));
-		if (ret) {
-			pr_err("%s: MSMFB_ENHANCE_SET_GAMMA ioctl failed\n", __func__);
-			goto exit;
-		}
-		ret = mdss_panel_set_gamma(pdata, Color_mode);
-		break;
-
-	case MSMFB_ENHANCE_SET_CE:
-		ret = copy_from_user(&CE_mode, argp, sizeof(CE_mode));
-		if (ret) {
-			pr_err("%s: MSMFB_ENHANCE_SET_CE ioctl failed\n", __func__);
-			goto exit;
-		}
-		ret = mdss_panel_set_ce(pdata, CE_mode);
 		break;
 	default:
 		if (mfd->mdp.ioctl_handler)

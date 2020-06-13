@@ -22,7 +22,11 @@
 		qcom,mdss-dsi-panel-controller = <&mdss_dsi0>;
 		qcom,mdss-dsi-panel-type = "dsi_video_mode";
 		qcom,mdss-dsi-panel-destination = "display_1";
+<<<<<<< HEAD
 		qcom,mdss-dsi-panel-framerate = <63>;
+=======
+		qcom,mdss-dsi-panel-framerate = <60>;
+>>>>>>> parent of b3317fa1a417... arm: dts: Remove unneeded changes from Xiaomi
 		qcom,mdss-dsi-virtual-channel-id = <0>;
 		qcom,mdss-dsi-stream = <0>;
 		qcom,mdss-dsi-panel-width = <720>;

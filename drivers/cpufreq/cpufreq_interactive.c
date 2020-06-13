@@ -31,7 +31,6 @@
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
-#include <linux/ktrace.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/cpufreq_interactive.h>
@@ -600,14 +599,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 		trace_cpufreq_interactive_notyet(
 			max_cpu, pol_load, ppol->target_freq,
 			ppol->policy->cur, new_freq);
-
-	if ((ppol->target_freq != ppol->policy->cur)
-		&& (ppol->target_freq > ppol->policy->max)) {
-		ktrace_add_cpufreq_event(KTRACE_CPUFREQ_TYPE_MITIGATION,
-				current->pid, ktime_to_ns(ktime_get()), max_cpu,
-				ppol->target_freq, ppol->policy->max);
-	}
-
 		spin_unlock_irqrestore(&ppol->target_freq_lock, flags);
 		goto rearm;
 	}

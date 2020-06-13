@@ -1330,13 +1330,11 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 
 correct_plug_type:
 
-	#if defined (CONFIG_UGGLITE) || defined (CONFIG_UGG)
+#if defined (CONFIG_UGGLITE) || defined (CONFIG_UGG)
 	for(iRetryCount = 0; iRetryCount < 5; iRetryCount++) {
-	#else
+#else
 	timeout = jiffies + msecs_to_jiffies(HS_DETECT_PLUG_TIME_MS);
 	while (!time_after(jiffies, timeout)) {
-#if 1
-		retry++;
 #endif
 
 		if (mbhc->hs_detect_work_stop) {

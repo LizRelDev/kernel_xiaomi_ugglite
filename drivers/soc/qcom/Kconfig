@@ -939,11 +939,6 @@ config CPUMAXFREQ
 	help
 	  Provide a interface for getting the maximum frequency supported by cpu core
 
-config SERIAL_NUM
-	bool "Enable Serial Number Proc Interface"
-	help
-	Provide a interface for reading CPU serial number
-
 config STATE_NOTIFIER
 	bool "State Notifier"
 	default y

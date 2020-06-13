@@ -34,23 +34,16 @@
 #include <linux/slab.h>
 #include <linux/compiler.h>
 #include <linux/pstore_ram.h>
-#include <linux/bootmem.h>
-#include <linux/memblock.h>
-#include <linux/of.h>
 
 #define RAMOOPS_KERNMSG_HDR "===="
 #define MIN_MEM_SIZE 4096UL
-
-#define SZ_2_1M    0x100000
-#define PSTORE_RAM_SIZE_DEFAULT        SZ_2_1M
-#define RAM_MAX_MEM (1 << 31)
 
 static ulong record_size = MIN_MEM_SIZE;
 module_param(record_size, ulong, 0400);
 MODULE_PARM_DESC(record_size,
 		"size of each dump done on oops/panic");
 
-static ulong ramoops_console_size = 256*1024UL;
+static ulong ramoops_console_size = MIN_MEM_SIZE;
 module_param_named(console_size, ramoops_console_size, ulong, 0400);
 MODULE_PARM_DESC(console_size, "size of kernel console log");
 
@@ -388,14 +381,13 @@ static void ramoops_free_przs(struct ramoops_context *cxt)
 {
 	int i;
 
+	cxt->max_dump_cnt = 0;
 	if (!cxt->przs)
 		return;
 
-	for (i = 0; i < cxt->max_dump_cnt; i++)
+	for (i = 0; !IS_ERR_OR_NULL(cxt->przs[i]); i++)
 		persistent_ram_free(cxt->przs[i]);
-
 	kfree(cxt->przs);
-	cxt->max_dump_cnt = 0;
 }
 
 static int ramoops_init_przs(struct device *dev, struct ramoops_context *cxt,
@@ -420,7 +412,7 @@ static int ramoops_init_przs(struct device *dev, struct ramoops_context *cxt,
 			     GFP_KERNEL);
 	if (!cxt->przs) {
 		dev_err(dev, "failed to initialize a prz array for dumps\n");
-		goto fail_mem;
+		goto fail_prz;
 	}
 
 	for (i = 0; i < cxt->max_dump_cnt; i++) {
@@ -433,11 +425,6 @@ static int ramoops_init_przs(struct device *dev, struct ramoops_context *cxt,
 			err = PTR_ERR(cxt->przs[i]);
 			dev_err(dev, "failed to request mem region (0x%zx@0x%llx): %d\n",
 				sz, (unsigned long long)*paddr, err);
-
-			while (i > 0) {
-				i--;
-				persistent_ram_free(cxt->przs[i]);
-			}
 			goto fail_prz;
 		}
 		*paddr += sz;
@@ -445,9 +432,7 @@ static int ramoops_init_przs(struct device *dev, struct ramoops_context *cxt,
 
 	return 0;
 fail_prz:
-	kfree(cxt->przs);
-fail_mem:
-	cxt->max_dump_cnt = 0;
+	ramoops_free_przs(cxt);
 	return err;
 }
 
@@ -616,6 +601,7 @@ static int __exit ramoops_remove(struct platform_device *pdev)
 
 	iounmap(cxt->virt_addr);
 	release_mem_region(cxt->phys_addr, cxt->size);
+	cxt->max_dump_cnt = 0;
 
 	/* TODO(kees): When pstore supports unregistering, call it here. */
 	kfree(cxt->pstore.buf);
@@ -668,36 +654,6 @@ static void ramoops_register_dummy(void)
 		pr_info("could not create platform device: %ld\n",
 			PTR_ERR(dummy));
 	}
-}
-
-void __init pstore_ram_reserve_memory(void)
-{
-	phys_addr_t mem;
-	size_t size;
-	int ret;
-
-	size = PSTORE_RAM_SIZE_DEFAULT;
-	size = ALIGN(size, PAGE_SIZE);
-
-	mem = memblock_find_in_range(0, RAM_MAX_MEM, size, PAGE_SIZE);
-	if (!mem) {
-		pr_err("Cannot find memblock range for pstore_ram\n");
-		return;
-	}
-
-	ret = memblock_reserve(mem, size);
-	if (ret) {
-		pr_err("Failed to reserve memory from 0x%llx-0x%llx\n",
-				(unsigned long long)mem,
-				(unsigned long long)(mem + size - 1));
-		return;
-	}
-
-	mem_address = mem;
-	mem_size = size;
-
-	printk("reserved RAM buffer: mem_address:0x%zx mem_size:0x%llx \n",
-			size, (unsigned long long)mem);
 }
 
 static int __init ramoops_init(void)

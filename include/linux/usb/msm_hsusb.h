@@ -429,8 +429,6 @@ struct msm_otg {
 	struct clk *phy_csr_clk;
 	struct clk *bus_clks[USB_NUM_BUS_CLOCKS];
 	struct clk *phy_ref_clk;
-	spinlock_t otg_phy_clk_lock;
-	bool otg_phy_clk_enable;
 	long core_clk_rate;
 	long core_clk_svs_rate;
 	long core_clk_nominal_rate;

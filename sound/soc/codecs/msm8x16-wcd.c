@@ -1,5 +1,4 @@
 /* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
- * Copyright (C) 2018 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -34,7 +33,6 @@
 #include <linux/workqueue.h>
 #include <linux/sched.h>
 #include <sound/q6afe-v2.h>
-#include <linux/switch.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
@@ -101,7 +99,7 @@ enum {
 #define SPK_PMD 2
 #define SPK_PMU 3
 
-#define MICBIAS_DEFAULT_VAL 2400000
+#define MICBIAS_DEFAULT_VAL 1800000
 #define MICBIAS_MIN_VAL 1600000
 #define MICBIAS_STEP_SIZE 50000
 
@@ -135,10 +133,8 @@ enum {
 static const DECLARE_TLV_DB_SCALE(digital_gain, 0, 1, 0);
 static const DECLARE_TLV_DB_SCALE(analog_gain, 0, 25, 1);
 static struct snd_soc_dai_driver msm8x16_wcd_i2s_dai[];
-
-static struct switch_dev accdet_data;
-static int accdet_state;
-static bool spkr_boost_en;
+/* By default enable the internal speaker boost */
+static bool spkr_boost_en = true;
 
 #define MSM8X16_WCD_ACQUIRE_LOCK(x) \
 	mutex_lock_nested(&x, SINGLE_DEPTH_NESTING)
@@ -960,8 +956,7 @@ exit:
 	msm8x16_wcd_compute_impedance(codec, impedance_l, impedance_r,
 				      zl, zr, high);
 
-
-	pr_err("%s: RL %d ohm, RR %d ohm\n", __func__, *zl, *zr);
+	pr_debug("%s: RL %d ohm, RR %d ohm\n", __func__, *zl, *zr);
 	pr_debug("%s: Impedance detection completed\n", __func__);
 }
 
@@ -1168,11 +1163,6 @@ static int __msm8x16_wcd_reg_read(struct snd_soc_codec *codec,
 	pr_debug("%s reg = %x\n", __func__, reg);
 	mutex_lock(&msm8x16_wcd->io_lock);
 	pdata = snd_soc_card_get_drvdata(codec->component.card);
-
-	if (pdata == NULL) {
-		mutex_unlock(&msm8x16_wcd->io_lock);
-		return ret;
-	}
 	if (MSM8X16_WCD_IS_TOMBAK_REG(reg))
 		ret = msm8x16_wcd_spmi_read(reg, 1, &temp);
 	else if (MSM8X16_WCD_IS_DIGITAL_REG(reg)) {
@@ -1229,11 +1219,6 @@ static int __msm8x16_wcd_reg_write(struct snd_soc_codec *codec,
 
 	mutex_lock(&msm8x16_wcd->io_lock);
 	pdata = snd_soc_card_get_drvdata(codec->component.card);
-
-	if (pdata == NULL) {
-		mutex_unlock(&msm8x16_wcd->io_lock);
-		return ret;
-	}
 	if (MSM8X16_WCD_IS_TOMBAK_REG(reg))
 		ret = msm8x16_wcd_spmi_write(reg, 1, &val);
 	else if (MSM8X16_WCD_IS_DIGITAL_REG(reg)) {
@@ -4103,9 +4088,6 @@ void wcd_imped_config(struct snd_soc_codec *codec,
 
 	value = wcd_get_impedance_value(imped);
 
-#ifdef WT_COMPILE_FACTORY_VERSION
-	value = 16;
-#endif
 	if (value < wcd_imped_val[0]) {
 		pr_debug("%s, detected impedance is less than 4 Ohm\n",
 			 __func__);
@@ -4113,9 +4095,6 @@ void wcd_imped_config(struct snd_soc_codec *codec,
 	}
 
 	codec_version = get_codec_version(msm8x16_wcd);
-
-	pr_err("%s codec_version %d imped %u set_gain %d\n", __func__,
-									codec_version, value, set_gain);
 
 	if (set_gain) {
 		switch (codec_version) {
@@ -4254,23 +4233,14 @@ static int msm8x16_wcd_lo_dac_event(struct snd_soc_dapm_widget *w,
 	case SND_SOC_DAPM_PRE_PMU:
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x10);
-
-		#ifdef CONFIG_D1_ROSY
-		snd_soc_update_bits(codec,
-			MSM8X16_WCD_A_ANALOG_RX_LO_EN_CTL, 0x20, 0x00);
-		#else
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_ANALOG_RX_LO_EN_CTL, 0x20, 0x20);
-		#endif
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_ANALOG_RX_LO_EN_CTL, 0x80, 0x80);
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_ANALOG_RX_LO_DAC_CTL, 0x08, 0x08);
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_ANALOG_RX_LO_DAC_CTL, 0x40, 0x40);
-#if defined(CONFIG_D1_ROSY)
-		msleep(5);
-#endif
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		snd_soc_update_bits(codec,
@@ -4344,17 +4314,6 @@ static int msm8x16_wcd_hphr_dac_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
-void msm8x16_wcd_codec_set_headset_state(u32 state)
-{
-	switch_set_state((struct switch_dev *)&accdet_data, state);
-	accdet_state = state;
-}
-
-int msm8x16_wcd_codec_get_headset_state(void)
-{
-	pr_debug("%s accdet_state = %d\n", __func__, accdet_state);
-	return accdet_state;
-}
 static int msm8x16_wcd_hph_pa_event(struct snd_soc_dapm_widget *w,
 			      struct snd_kcontrol *kcontrol, int event)
 {
@@ -4479,9 +4438,6 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"Ext Spk", NULL, "Ext Spk Switch"},
 	{"Ext Spk Switch", "On", "HPHL PA"},
 	{"Ext Spk Switch", "On", "HPHR PA"},
-	#if defined (CONFIG_D1_ROSY)
-	{"Ext Spk Switch", "On", "LINEOUT PA"},
-	#endif
 
 	{"HPHL PA", NULL, "HPHL"},
 	{"HPHR PA", NULL, "HPHR"},
@@ -5154,15 +5110,9 @@ static const struct snd_soc_dapm_widget msm8x16_wcd_dapm_widgets[] = {
 			SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 			SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
 
-#ifdef CONFIG_D1_ROSY
-	SND_SOC_DAPM_PGA_E("LINEOUT PA", MSM8X16_WCD_A_ANALOG_RX_LO_EN_CTL,
-			5, 1 , NULL, 0, msm8x16_wcd_codec_enable_lo_pa,
-			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
-#else
 	SND_SOC_DAPM_PGA_E("LINEOUT PA", MSM8X16_WCD_A_ANALOG_RX_LO_EN_CTL,
 			6, 0 , NULL, 0, msm8x16_wcd_codec_enable_lo_pa,
 			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD),
-#endif
 
 	SND_SOC_DAPM_SUPPLY("VDD_SPKDRV", SND_SOC_NOPM, 0, 0,
 			    msm89xx_wcd_codec_enable_vdd_spkr,
@@ -5927,15 +5877,6 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 
 	wcd_mbhc_init(&msm8x16_wcd_priv->mbhc, codec, &mbhc_cb, &intr_ids,
 		      wcd_mbhc_registers, true);
-	accdet_data.name = "h2w";
-	accdet_data.index = 0;
-	accdet_data.state = 0;
-
-	ret = switch_dev_register(&accdet_data);
-	if (ret) {
-		dev_err(codec->dev, "%s: Failed to register h2w\n", __func__);
-		return -ENOMEM;
-	}
 
 	msm8x16_wcd_priv->mclk_enabled = false;
 	msm8x16_wcd_priv->clock_active = false;

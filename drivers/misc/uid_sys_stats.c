@@ -78,14 +78,6 @@ struct uid_entry {
 #endif
 };
 
-static u64 compute_write_bytes(struct task_struct *task)
-{
-	if (task->ioac.write_bytes <= task->ioac.cancelled_write_bytes)
-		return 0;
-
-	return task->ioac.write_bytes - task->ioac.cancelled_write_bytes;
-}
-
 static void compute_io_bucket_stats(struct io_stats *io_bucket,
 					struct io_stats *io_curr,
 					struct io_stats *io_last,

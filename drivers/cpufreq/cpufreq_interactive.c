@@ -1796,12 +1796,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 	case CPUFREQ_GOV_LIMITS:
 		ppol = per_cpu(polinfo, policy->cpu);
 
-		if (policy->max < policy->cpuinfo.max_freq) {
-			ktrace_cpufreq_set_mitigated(current->comm, policy->cpu, policy->related_cpus, policy->max);
-		} else {
-			ktrace_cpufreq_set_mitigated(current->comm, policy->cpu, policy->related_cpus, 0);
-		}
-
 		__cpufreq_driver_target(policy,
 				ppol->target_freq, CPUFREQ_RELATION_L);
 
